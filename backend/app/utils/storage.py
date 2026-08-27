@@ -36,19 +36,22 @@ def get_user_dirs(user_id: int) -> dict:
     index.mkdir(parents=True, exist_ok=True)
     return {"root": user_root, "uploads": uploads, "index": index}
 
-
 def validate_upload(upload: UploadFile) -> str:
-    """Validate extension; returns the lowercase extension or raises 400."""
-    filename = upload.filename or ""
-    ext = os.path.splitext(filename)[1].lower()
+    """Validate file extension."""
+    ext = Path(upload.filename or "").suffix.lower()
 
-    print(f"UPLOAD DEBUG: filename={filename!r}, extension={ext!r}")
-    print(f"UPLOAD DEBUG: allowed={settings.allowed_extensions_list}")
+    allowed = set()
+    for item in settings.ALLOWED_UPLOAD_EXTENSIONS.split(","):
+        item = item.strip().lower()
+        if item:
+            if not item.startswith("."):
+                item = "." + item
+            allowed.add(item)
 
-    if ext not in settings.allowed_extensions_list:
+    if ext not in allowed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(settings.allowed_extensions_list)}",
+            detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(sorted(allowed))}",
         )
 
     return ext
