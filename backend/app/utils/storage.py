@@ -39,12 +39,18 @@ def get_user_dirs(user_id: int) -> dict:
 
 def validate_upload(upload: UploadFile) -> str:
     """Validate extension; returns the lowercase extension or raises 400."""
-    ext = os.path.splitext(upload.filename or "")[1].lower()
+    filename = upload.filename or ""
+    ext = os.path.splitext(filename)[1].lower()
+
+    print(f"UPLOAD DEBUG: filename={filename!r}, extension={ext!r}")
+    print(f"UPLOAD DEBUG: allowed={settings.allowed_extensions_list}")
+
     if ext not in settings.allowed_extensions_list:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(settings.allowed_extensions_list)}",
         )
+
     return ext
 
 
