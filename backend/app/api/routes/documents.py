@@ -26,43 +26,140 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 
 def _process_document(user_id: int, document_id: int) -> None:
-    """Background task: extract, chunk, embed, and index a single document."""
+    """Background task: extract, chunk, embed, and index a document."""
+
+    logger.info("=" * 60)
+    logger.info(
+        "DOCUMENT PROCESSING STARTED | document_id=%s | user_id=%s",
+        document_id,
+        user_id,
+    )
+    logger.info("=" * 60)
+
     db = SessionLocal()
+
     try:
-        doc = db.query(Document).filter(Document.id == document_id).first()
+        doc = db.query(Document).filter(
+            Document.id == document_id
+        ).first()
+
         if not doc:
+            logger.error(
+                "Document %s not found",
+                document_id
+            )
             return
+
+        logger.info(
+            "STEP 1/5: Document found: %s",
+            doc.filename
+        )
 
         dirs = get_user_dirs(user_id)
         index_dir = dirs["index"]
 
+        logger.info(
+            "STEP 2/5: Extracting text from PDF/document..."
+        )
+
         raw = extract_text_from_file(doc.file_path)
+
+        logger.info(
+            "Extraction complete: %d characters",
+            len(raw)
+        )
+
         cleaned = clean_text(raw)
+
+        logger.info(
+            "Cleaning complete: %d characters",
+            len(cleaned)
+        )
+
+        logger.info(
+            "STEP 3/5: Creating chunks..."
+        )
+
         new_chunks = chunk_text(cleaned)
 
+        logger.info(
+            "Chunking complete: %d chunks created",
+            len(new_chunks)
+        )
+
         if not new_chunks:
+            logger.error(
+                "No chunks created for document %s",
+                document_id
+            )
+
             doc.status = "failed"
             db.commit()
             return
 
         chunk_path = index_dir / "chunk_texts.pkl"
+
         existing = load_chunks(chunk_path)
-        merged = existing + [{"document_id": doc.id, "text": c} for c in new_chunks]
+
+        logger.info(
+            "Existing chunks: %d",
+            len(existing)
+        )
+
+        merged = existing + [
+            {
+                "document_id": doc.id,
+                "text": c
+            }
+            for c in new_chunks
+        ]
+
         save_chunks(chunk_path, merged)
-        build_faiss_index(merged, index_dir / "faiss.index")
+
+        logger.info(
+            "STEP 4/5: Building FAISS index..."
+        )
+
+        build_faiss_index(
+            merged,
+            index_dir / "faiss.index"
+        )
+
+        logger.info(
+            "STEP 5/5: FAISS index created successfully"
+        )
 
         doc.status = "ready"
         db.commit()
+
+        logger.info("=" * 60)
+        logger.info(
+            "DOCUMENT PROCESSING COMPLETE | document_id=%s",
+            document_id
+        )
+        logger.info("STATUS: READY")
+        logger.info("=" * 60)
+
     except Exception:
-        logger.exception("Failed to process document %s", document_id)
+        logger.exception(
+            "DOCUMENT PROCESSING FAILED | document_id=%s",
+            document_id
+        )
+
         db2 = SessionLocal()
+
         try:
-            doc = db2.query(Document).filter(Document.id == document_id).first()
+            doc = db2.query(Document).filter(
+                Document.id == document_id
+            ).first()
+
             if doc:
                 doc.status = "failed"
                 db2.commit()
+
         finally:
             db2.close()
+
     finally:
         db.close()
 

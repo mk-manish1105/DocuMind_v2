@@ -44,12 +44,44 @@ def build_faiss_index(chunks: List[ChunkRecord], index_path: Path):
         index_path.unlink(missing_ok=True)
         return None
 
-    embeddings = embedding_service.embed_texts([c["text"] for c in chunks])
+    print("=" * 60)
+    print(f"FAISS INDEX BUILD START")
+    print(f"Total chunks: {len(chunks)}")
+    print("=" * 60)
+
+    embeddings = embedding_service.embed_texts(
+        [c["text"] for c in chunks]
+    )
+
+    print(
+        f"Embeddings generated: {embeddings.shape}"
+    )
+
     faiss.normalize_L2(embeddings)
 
-    index = faiss.IndexFlatIP(embeddings.shape[1])
+    print("Creating FAISS IndexFlatIP...")
+
+    index = faiss.IndexFlatIP(
+        embeddings.shape[1]
+    )
+
     index.add(embeddings)
-    faiss.write_index(index, str(index_path))
+
+    print(
+        f"FAISS index contains {index.ntotal} vectors"
+    )
+
+    faiss.write_index(
+        index,
+        str(index_path)
+    )
+
+    print(
+        f"FAISS index saved: {index_path}"
+    )
+
+    print("FAISS INDEX BUILD COMPLETE")
+
     return index
 
 

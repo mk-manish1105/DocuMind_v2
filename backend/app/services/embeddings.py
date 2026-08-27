@@ -29,16 +29,68 @@ class EmbeddingService:
         if self._model is None:
             with self._lock:
                 if self._model is None:
+                    logger.info("=" * 60)
+                    logger.info("EMBEDDING MODEL LOAD START")
+                    logger.info("Model: %s", self.model_name)
+                    logger.info("=" * 60)
+
+                    import time
+                    start = time.time()
+
                     from sentence_transformers import SentenceTransformer
-                    logger.info("Loading embedding model '%s'...", self.model_name)
+
+                    logger.info("Downloading/loading SentenceTransformer model...")
                     self._model = SentenceTransformer(self.model_name)
-                    logger.info("Embedding model loaded.")
+
+                    elapsed = time.time() - start
+
+                    logger.info("=" * 60)
+                    logger.info(
+                        "EMBEDDING MODEL LOADED SUCCESSFULLY"
+                    )
+                    logger.info("Model: %s", self.model_name)
+                    logger.info("Load time: %.2f seconds", elapsed)
+                    logger.info("=" * 60)
+
         return self._model
 
     def embed_texts(self, texts: List[str]) -> np.ndarray:
         model = self._ensure_loaded()
-        prefixed = [f"passage: {t}" for t in texts] if self._needs_prefix else texts
-        embeddings = model.encode(prefixed, show_progress_bar=False, normalize_embeddings=True)
+    
+        logger.info(
+            "START EMBEDDING: %d chunks",
+            len(texts)
+        )
+    
+        prefixed = (
+            [f"passage: {t}" for t in texts]
+            if self._needs_prefix
+            else texts
+        )
+    
+        import time
+        start = time.time()
+    
+        embeddings = model.encode(
+            prefixed,
+            show_progress_bar=False,
+            normalize_embeddings=True,
+            batch_size=4,
+        )
+    
+        elapsed = time.time() - start
+    
+        logger.info(
+            "EMBEDDING COMPLETE: %d chunks in %.2f seconds",
+            len(texts),
+            elapsed
+        )
+    
+        logger.info(
+            "Embedding shape: %s",
+            embeddings.shape
+        )
+    
         return embeddings.astype("float32")
 
     def embed_query(self, query: str) -> np.ndarray:
