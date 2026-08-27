@@ -1,0 +1,594 @@
+@import "tailwindcss";
+@import "highlight.js/styles/github-dark.css";
+
+/*
+  Tailwind v4 reads design tokens from CSS, not from tailwind.config.js.
+  Everything below @theme becomes a real utility class.
+*/
+
+@theme {
+  /* ========================================================= */
+  /* BRAND                                                     */
+  /* ========================================================= */
+
+  --color-brand-50: #f1f0fd;
+  --color-brand-100: #e3e1fb;
+  --color-brand-200: #c2bdf6;
+  --color-brand-300: #a095f0;
+  --color-brand-400: #7c6ce8;
+  --color-brand-500: #5b4fe0;
+  --color-brand-600: #4735cf;
+  --color-brand-700: #392aaa;
+  --color-brand-800: #2d2286;
+  --color-brand-900: #211a63;
+
+  /* ========================================================= */
+  /* INK                                                       */
+  /* ========================================================= */
+
+  --color-ink-50: #f7f7f8;
+  --color-ink-100: #eeeef0;
+  --color-ink-200: #d9d9de;
+  --color-ink-300: #b7b7c0;
+  --color-ink-400: #8f8f9c;
+  --color-ink-500: #6c6c7a;
+  --color-ink-600: #4f4f5c;
+  --color-ink-700: #3a3a45;
+  --color-ink-800: #26262f;
+  --color-ink-900: #17171d;
+
+  /* ========================================================= */
+  /* PAPER                                                       */
+  /* ========================================================= */
+
+  --color-paper-0: #ffffff;
+  --color-paper-50: #fbfaf7;
+  --color-paper-100: #f5f3ee;
+  --color-paper-200: #ece8df;
+
+  /* ========================================================= */
+  /* HIGHLIGHT                                                  */
+  /* ========================================================= */
+
+  --color-highlight-300: #ffe27a;
+  --color-highlight-400: #ffd23f;
+  --color-highlight-500: #f7bd0e;
+
+  /* ========================================================= */
+  /* FONTS                                                      */
+  /* ========================================================= */
+
+  --font-sans:
+    "Inter",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+
+  --font-display:
+    "Fraunces",
+    ui-serif,
+    Georgia,
+    serif;
+
+  --font-mono:
+    "JetBrains Mono",
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+
+  /* ========================================================= */
+  /* SHADOWS                                                    */
+  /* ========================================================= */
+
+  --shadow-panel:
+    0 1px 2px rgba(23, 23, 29, 0.06),
+    0 1px 3px rgba(23, 23, 29, 0.08);
+
+  --shadow-lifted:
+    0 8px 24px -8px rgba(23, 23, 29, 0.18),
+    0 2px 8px -2px rgba(23, 23, 29, 0.08);
+
+  /* ========================================================= */
+  /* ANIMATIONS                                                 */
+  /* ========================================================= */
+
+  --animate-fade-up:
+    fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  --animate-fade-in:
+    fade-in 0.4s ease both;
+}
+
+
+/* ============================================================= */
+/* GLOBAL ANIMATIONS                                              */
+/* ============================================================= */
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+
+/* ============================================================= */
+/* DOCUMENT / APPLICATION ROOT                                    */
+/* ============================================================= */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+
+html {
+  scroll-behavior: smooth;
+}
+
+
+body {
+  margin: 0;
+
+  background-color: var(--color-paper-50);
+
+  color: var(--color-ink-900);
+
+  font-family: var(--font-sans);
+
+  -webkit-font-smoothing: antialiased;
+
+  -moz-osx-font-smoothing: grayscale;
+
+  text-rendering: optimizeLegibility;
+}
+
+
+/* ============================================================= */
+/* SELECTION                                                      */
+/* ============================================================= */
+
+::selection {
+  background-color: var(--color-brand-200);
+  color: var(--color-ink-900);
+}
+
+
+/* ============================================================= */
+/* FOCUS                                                         */
+/* ============================================================= */
+
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+
+  outline-offset: 2px;
+
+  border-radius: 4px;
+}
+
+
+/* ============================================================= */
+/* INTERACTIVE ELEMENTS                                           */
+/* ============================================================= */
+
+button,
+a,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+
+button {
+  font-family: inherit;
+}
+
+
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+
+input::placeholder,
+textarea::placeholder {
+  opacity: 1;
+}
+
+
+/* ============================================================= */
+/* REDUCED MOTION                                                 */
+/* ============================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  *::before,
+  *::after,
+  * {
+    animation-duration: 0.001ms !important;
+
+    animation-iteration-count: 1 !important;
+
+    transition-duration: 0.001ms !important;
+
+    scroll-behavior: auto !important;
+  }
+}
+
+
+/* ============================================================= */
+/* SCROLLBAR                                                      */
+/* ============================================================= */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-ink-200);
+
+  border-radius: 9999px;
+}
+
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-ink-300);
+}
+
+
+/* ============================================================= */
+/* HIGHLIGHTER EFFECT                                             */
+/* ============================================================= */
+
+/*
+  Used by the old landing-page components and can remain safely.
+*/
+
+.highlight-swash {
+  background-image: linear-gradient(
+    to right,
+    color-mix(
+      in srgb,
+      var(--color-highlight-400) 70%,
+      transparent
+    ),
+    color-mix(
+      in srgb,
+      var(--color-highlight-400) 70%,
+      transparent
+    )
+  );
+
+  background-repeat: no-repeat;
+
+  background-position: 0 88%;
+
+  background-size: 100% 0.4em;
+}
+
+
+/* ============================================================= */
+/* MARKDOWN / CHAT MESSAGE FORMATTING                             */
+/* ============================================================= */
+
+.markdown-body {
+  font-size: 0.9375rem;
+
+  line-height: 1.7;
+
+  color: var(--color-ink-800);
+}
+
+
+.markdown-body > *:first-child {
+  margin-top: 0;
+}
+
+
+.markdown-body > *:last-child {
+  margin-bottom: 0;
+}
+
+
+.markdown-body p {
+  margin: 0 0 0.85em;
+}
+
+
+.markdown-body ul {
+  list-style-type: disc;
+
+  padding-left: 1.35rem;
+
+  margin: 0 0 0.85em;
+}
+
+
+.markdown-body ol {
+  list-style-type: decimal;
+
+  padding-left: 1.35rem;
+
+  margin: 0 0 0.85em;
+}
+
+
+.markdown-body li {
+  margin: 0.25em 0;
+}
+
+
+.markdown-body li::marker {
+  color: var(--color-ink-400);
+}
+
+
+.markdown-body li > p {
+  margin: 0;
+}
+
+
+/* ============================================================= */
+/* MARKDOWN HEADINGS                                              */
+/* ============================================================= */
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  font-weight: 600;
+
+  color: var(--color-ink-900);
+
+  line-height: 1.35;
+}
+
+
+.markdown-body h1 {
+  font-size: 1.25rem;
+
+  margin: 1.1em 0 0.5em;
+}
+
+
+.markdown-body h2 {
+  font-size: 1.125rem;
+
+  margin: 1.1em 0 0.5em;
+}
+
+
+.markdown-body h3 {
+  font-size: 1rem;
+
+  margin: 1em 0 0.4em;
+}
+
+
+.markdown-body h4 {
+  font-size: 0.9375rem;
+
+  margin: 1em 0 0.4em;
+}
+
+
+/* ============================================================= */
+/* MARKDOWN STRONG                                               */
+/* ============================================================= */
+
+.markdown-body strong {
+  font-weight: 600;
+
+  color: var(--color-ink-900);
+}
+
+
+/* ============================================================= */
+/* INLINE CODE                                                    */
+/* ============================================================= */
+
+.markdown-body code:not(pre code) {
+  background-color: var(--color-ink-100);
+
+  color: var(--color-ink-800);
+
+  border-radius: 0.3rem;
+
+  padding: 0.15rem 0.4rem;
+
+  font-size: 0.85em;
+
+  font-family: var(--font-mono);
+}
+
+
+/* ============================================================= */
+/* MARKDOWN LINKS                                                 */
+/* ============================================================= */
+
+.markdown-body a {
+  color: var(--color-brand-600);
+
+  text-decoration: underline;
+
+  text-underline-offset: 2px;
+
+  text-decoration-color: var(--color-brand-300);
+}
+
+
+.markdown-body a:hover {
+  color: var(--color-brand-700);
+}
+
+
+/* ============================================================= */
+/* MARKDOWN BLOCKQUOTE                                            */
+/* ============================================================= */
+
+.markdown-body blockquote {
+  border-left: 3px solid var(--color-highlight-400);
+
+  background: color-mix(
+    in srgb,
+    var(--color-highlight-300) 18%,
+    transparent
+  );
+
+  padding: 0.5em 0.9em;
+
+  margin: 0 0 0.85em;
+
+  border-radius: 0 0.5rem 0.5rem 0;
+
+  color: var(--color-ink-700);
+}
+
+
+.markdown-body blockquote p {
+  margin: 0;
+}
+
+
+/* ============================================================= */
+/* MARKDOWN HORIZONTAL RULE                                       */
+/* ============================================================= */
+
+.markdown-body hr {
+  border: none;
+
+  border-top: 1px solid var(--color-ink-200);
+
+  margin: 1.25em 0;
+}
+
+
+/* ============================================================= */
+/* MARKDOWN TABLE                                                 */
+/* ============================================================= */
+
+.markdown-body table {
+  width: 100%;
+
+  border-collapse: collapse;
+
+  margin: 0 0 0.85em;
+
+  font-size: 0.875em;
+
+  overflow: hidden;
+
+  border-radius: 0.5rem;
+
+  border: 1px solid var(--color-ink-200);
+}
+
+
+.markdown-body th,
+.markdown-body td {
+  border-bottom: 1px solid var(--color-ink-200);
+
+  padding: 0.5rem 0.75rem;
+
+  text-align: left;
+
+  vertical-align: top;
+}
+
+
+.markdown-body th {
+  background-color: var(--color-ink-50);
+
+  font-weight: 600;
+
+  color: var(--color-ink-800);
+}
+
+
+.markdown-body tr:last-child td {
+  border-bottom: none;
+}
+
+
+/* ============================================================= */
+/* MARKDOWN IMAGES                                                */
+/* ============================================================= */
+
+.markdown-body img {
+  border-radius: 0.5rem;
+
+  max-width: 100%;
+
+  height: auto;
+}
+
+
+/* ============================================================= */
+/* MARKDOWN CODE BLOCKS                                           */
+/* ============================================================= */
+
+/*
+  Code blocks are rendered by CodeBlock.jsx.
+  highlight.js controls syntax highlighting.
+*/
+
+.markdown-body pre {
+  margin: 0;
+}
+
+
+.markdown-body pre code.hljs {
+  display: block;
+
+  background: transparent !important;
+
+  padding: 0;
+
+  font-family: var(--font-mono);
+
+  font-size: 0.8125rem;
+
+  line-height: 1.65;
+
+  overflow-x: auto;
+}
+
+
+/* ============================================================= */
+/* MOBILE                                                         */
+/* ============================================================= */
+
+@media (max-width: 640px) {
+  body {
+    overflow-x: hidden;
+  }
+}
