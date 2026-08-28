@@ -75,12 +75,9 @@ from app.services.llm_client import (
     stream_chat_completion,
 )
 
-from app.services.retriever import (
-    load_chunks,
-    load_faiss_index,
+from app.services.vector_store import (
+    search_document_chunks,
 )
-
-from app.utils.storage import get_user_dirs
 
 
 logger = logging.getLogger(__name__)
@@ -512,38 +509,11 @@ def _retrieve_permanent_context(
     question: str,
 ) -> str:
     """
-    Search ONLY the user's permanent document library.
-
-    Uses cosine similarity through FAISS IndexFlatIP.
-
-    IMPORTANT:
-    Both document embeddings and query embeddings must be
-    L2-normalized when using inner-product search as cosine
-    similarity.
+    Search the user's permanent document chunks
+    using Supabase PostgreSQL + pgvector.
     """
 
-    dirs = get_user_dirs(user_id)
-
-    index_dir = dirs["index"]
-
-    faiss_index = load_faiss_index(
-        index_dir / "faiss.index"
-    )
-
-    chunks = load_chunks(
-        index_dir / "chunk_texts.pkl"
-    )
-
-    if faiss_index is None or not chunks:
-        logger.warning(
-            "RAG: No FAISS index or chunks found."
-        )
-        return ""
-
     try:
-        # ----------------------------------------------------
-        # Create query embedding
-        # ----------------------------------------------------
 
         query_embedding = embedding_service.embed_query(
             question
@@ -554,207 +524,79 @@ def _retrieve_permanent_context(
             dtype="float32",
         )
 
-        # ----------------------------------------------------
-        # IMPORTANT:
-        # Normalize query embedding.
-        #
-        # FAISS IndexFlatIP + normalized vectors
-        # = cosine similarity.
-        # ----------------------------------------------------
-
-        if query_embedding.ndim == 1:
-            query_embedding = query_embedding.reshape(
-                1,
-                -1,
-            )
-
-        faiss.normalize_L2(
-            query_embedding
-        )
-
-        # ----------------------------------------------------
-        # FAISS search
-        # ----------------------------------------------------
-
-        top_k = min(
-            settings.RETRIEVAL_TOP_K,
-            len(chunks),
-        )
-
-        scores, indices = faiss_index.search(
-            query_embedding,
-            top_k,
-        )
-
-        # ====================================================
-        # DEBUG LOGGING
-        # ====================================================
-
-        logger.info(
-            "========== RAG RETRIEVAL =========="
-        )
-
-        logger.info(
-            "Question: %s",
-            question,
-        )
-
-        logger.info(
-            "Top K: %s",
-            top_k,
-        )
-
-        if scores.size:
-            logger.info(
-                "Best similarity score: %.4f",
-                float(scores[0][0]),
-            )
-
-        for rank, (score, idx) in enumerate(
-            zip(
-                scores[0],
-                indices[0],
+        results = search_document_chunks(
+            user_id=user_id,
+            query_embedding=query_embedding,
+            top_k=settings.RETRIEVAL_TOP_K,
+            min_similarity=(
+                settings.RETRIEVAL_CHUNK_SCORE_THRESHOLD
             ),
+        )
+
+        if not results:
+
+            logger.info(
+                "RAG: No relevant permanent chunks found."
+            )
+
+            return ""
+
+        logger.info(
+            "RAG: %d permanent chunks retrieved.",
+            len(results),
+        )
+
+        selected = []
+
+        for rank, result in enumerate(
+            results,
             start=1,
         ):
-            if 0 <= idx < len(chunks):
 
-                chunk_text = chunks[idx]["text"]
-
-                logger.info(
-                    "Rank %d | Score: %.4f | Chunk ID: %s",
-                    rank,
-                    float(score),
-                    idx,
+            similarity = float(
+                result.get(
+                    "similarity",
+                    0.0,
                 )
+            )
 
-                logger.info(
-                    "Chunk: %s",
-                    chunk_text[:500]
-                    .replace("\n", " ")
-                    .strip(),
-                )
+            logger.info(
+                "Rank %d | document_id=%s | "
+                "similarity=%.4f",
+                rank,
+                result.get("document_id"),
+                similarity,
+            )
 
-            else:
+            selected.append(
+                result["text"]
+            )
 
-                logger.info(
-                    "Rank %d | Score: %.4f | Invalid chunk index: %s",
-                    rank,
-                    float(score),
-                    idx,
-                )
-
-        logger.info(
-            "===================================="
+        context = "\n\n".join(
+            selected
         )
 
+        context = context[
+            :settings.CHAT_CONTEXT_CHAR_BUDGET
+        ]
+
+        logger.info(
+            "RAG RESULT: %d characters",
+            len(context),
+        )
+
+        return context
+
     except Exception:
+
         logger.exception(
             "Permanent document retrieval failed."
         )
-        return ""
-
-    # --------------------------------------------------------
-    # No results
-    # --------------------------------------------------------
-
-    if not scores.size:
-        logger.info(
-            "RAG: FAISS returned no results."
-        )
-        return ""
-
-    # --------------------------------------------------------
-    # Best score
-    # --------------------------------------------------------
-
-    best_score = float(
-        scores[0][0]
-    )
-
-    logger.info(
-        "RAG threshold check: "
-        "best_score=%.4f, "
-        "TOP_SCORE_THRESHOLD=%.4f",
-        best_score,
-        settings.RETRIEVAL_TOP_SCORE_THRESHOLD,
-    )
-
-    # --------------------------------------------------------
-    # Reject if overall similarity is too low
-    # --------------------------------------------------------
-
-    if (
-        best_score
-        < settings.RETRIEVAL_TOP_SCORE_THRESHOLD
-    ):
-        logger.info(
-            "RAG RESULT: REJECTED because "
-            "best score %.4f is below threshold %.4f",
-            best_score,
-            settings.RETRIEVAL_TOP_SCORE_THRESHOLD,
-        )
 
         return ""
 
-    # --------------------------------------------------------
-    # Select relevant chunks
-    # --------------------------------------------------------
 
-    selected = []
-
-    for score, idx in zip(
-        scores[0],
-        indices[0],
-    ):
-        score = float(score)
-
-        if (
-            0 <= idx < len(chunks)
-            and score
-            >= settings.RETRIEVAL_CHUNK_SCORE_THRESHOLD
-        ):
-            selected.append(
-                chunks[idx]["text"]
-            )
-
-            logger.info(
-                "RAG SELECTED | "
-                "Score: %.4f | Chunk ID: %s",
-                score,
-                idx,
-            )
-
-    if not selected:
-        logger.info(
-            "RAG RESULT: "
-            "No chunks passed chunk threshold."
-        )
-
-        return ""
-
-    # --------------------------------------------------------
-    # Build final context
-    # --------------------------------------------------------
-
-    context = "\n\n".join(
-        selected
-    )
-
-    context = context[
-        : settings.CHAT_CONTEXT_CHAR_BUDGET
-    ]
-
-    logger.info(
-        "RAG RESULT: "
-        "%d chunks selected, "
-        "%d context characters.",
-        len(selected),
-        len(context),
-    )
-
-    return context
-# ============================================================
+#============================================================
 # TEMPORARY DOCUMENT CONTEXT
 # ============================================================
 

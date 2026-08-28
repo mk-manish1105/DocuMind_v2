@@ -1,93 +1,96 @@
 """
-Filesystem utilities for per-user document storage.
+Utilities for validating and safely naming uploaded files.
 
-Fixes vs the original implementation:
-- Filenames are sanitized and prefixed with a random token before touching
-  disk, closing a path-traversal / same-name-overwrite issue.
-- Upload size is enforced while streaming to disk (not after the fact).
+Permanent document storage is handled by Supabase Storage.
+This module does NOT store permanent files on the local filesystem.
 """
-import os
+
 import re
-import shutil
-import uuid
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
 
 from app.core.config import settings
 
-BASE_DIR = Path(os.path.expanduser(settings.DOCUMIND_DATA_DIR))
 
-_SAFE_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
-
+# ============================================================
+# SANITIZE FILENAME
+# ============================================================
 
 def sanitize_filename(filename: str) -> str:
-    """Strip any path components and unsafe characters from a client-supplied filename."""
-    name = os.path.basename(filename or "file")
-    name = _SAFE_CHARS.sub("_", name).strip("._") or "file"
-    return name[:150]
+    """
+    Convert an uploaded filename into a safe display filename.
+
+    Example:
+        "My Resume (Final).pdf"
+        -> "My_Resume_Final.pdf"
+    """
+
+    filename = Path(
+        filename or "document"
+    ).name
+
+    stem = Path(filename).stem
+    suffix = Path(filename).suffix.lower()
+
+    # Replace unsafe characters with underscores.
+    stem = re.sub(
+        r"[^a-zA-Z0-9._-]+",
+        "_",
+        stem,
+    )
+
+    # Remove repeated underscores.
+    stem = re.sub(
+        r"_+",
+        "_",
+        stem,
+    ).strip("._-")
+
+    if not stem:
+        stem = "document"
+
+    return f"{stem}{suffix}"
 
 
-def get_user_dirs(user_id: int) -> dict:
-    user_root = BASE_DIR / str(user_id)
-    uploads = user_root / "uploads"
-    index = user_root / "index"
-    uploads.mkdir(parents=True, exist_ok=True)
-    index.mkdir(parents=True, exist_ok=True)
-    return {"root": user_root, "uploads": uploads, "index": index}
+# ============================================================
+# VALIDATE UPLOAD
+# ============================================================
 
 def validate_upload(upload: UploadFile) -> str:
-    """Validate file extension."""
-    ext = Path(upload.filename or "").suffix.lower()
+    """
+    Validate the uploaded document extension.
 
-    allowed = set()
-    for item in settings.ALLOWED_UPLOAD_EXTENSIONS.split(","):
-        item = item.strip().lower()
-        if item:
-            if not item.startswith("."):
-                item = "." + item
-            allowed.add(item)
+    Returns:
+        Lowercase file extension.
 
-    if ext not in allowed:
+    Permanent files are stored in Supabase Storage.
+    """
+
+    filename = upload.filename or ""
+
+    extension = Path(
+        filename
+    ).suffix.lower()
+
+    allowed = {
+        ext.strip().lower()
+        for ext in settings.ALLOWED_UPLOAD_EXTENSIONS.split(",")
+        if ext.strip()
+    }
+
+    allowed = {
+        ext if ext.startswith(".") else f".{ext}"
+        for ext in allowed
+    }
+
+    if extension not in allowed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(sorted(allowed))}",
+            detail=(
+                f"Unsupported file type '{extension}'. "
+                f"Allowed: {', '.join(sorted(allowed))}"
+            ),
         )
 
-    return ext
-
-
-def save_upload_file(upload: UploadFile, destination: Path) -> int:
-    """Stream-save an upload to disk, enforcing MAX_UPLOAD_MB. Returns bytes written."""
-    max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
-    written = 0
-    with destination.open("wb") as buffer:
-        while True:
-            chunk = upload.file.read(1024 * 1024)
-            if not chunk:
-                break
-            written += len(chunk)
-            if written > max_bytes:
-                buffer.close()
-                destination.unlink(missing_ok=True)
-                raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail=f"File exceeds the {settings.MAX_UPLOAD_MB}MB limit",
-                )
-            buffer.write(chunk)
-    return written
-
-
-def build_stored_path(uploads_dir: Path, original_filename: str) -> tuple[Path, str]:
-    """Returns (destination_path, safe_display_filename)."""
-    safe_name = sanitize_filename(original_filename)
-    stored_name = f"{uuid.uuid4().hex}_{safe_name}"
-    return uploads_dir / stored_name, safe_name
-
-
-def delete_file_safe(path: Path) -> None:
-    try:
-        if path.exists():
-            path.unlink()
-    except OSError:
-        pass
+    return extension

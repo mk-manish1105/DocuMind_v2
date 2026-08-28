@@ -1,10 +1,11 @@
 fastapi==0.110.0
 uvicorn[standard]==0.29.0
-
 sqlalchemy==2.0.29
 psycopg2-binary==2.9.9
 python-dotenv==1.0.1
 pydantic-settings==2.2.1
+
+supabase
 
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
@@ -23,5 +24,4 @@ huggingface_hub==0.20.3
 PyMuPDF==1.22.5
 python-docx==1.2.0
 sentence-splitter==1.4
-
 requests==2.31.0
