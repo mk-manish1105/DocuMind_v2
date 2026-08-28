@@ -1,103 +1,246 @@
 """
-Embedding service. Lazily loads the sentence-transformers model on first
-use (not at import time) so the API can start instantly and report a clean
-error if the model fails to load, instead of crashing the whole process.
+Remote embedding service using Hugging Face Inference.
 
-Also correctly applies the "query: " / "passage: " prefix convention
-required by the e5 model family (a no-op for MiniLM/BGE, so switching
-EMBEDDING_MODEL later stays safe).
+The embedding model runs remotely on Hugging Face.
+Render does NOT download or load PyTorch/SentenceTransformers.
+
+Model:
+    BAAI/bge-small-en-v1.5
+
+Embedding dimension:
+    384
+
+This keeps the same embedding model and vector dimension
+used by the existing Supabase pgvector database.
 """
+
 import logging
-import threading
+import time
 from typing import List
 
 import numpy as np
+import requests
 
 from app.core.config import settings
+
 
 logger = logging.getLogger(__name__)
 
 
 class EmbeddingService:
+
     def __init__(self, model_name: str):
+
         self.model_name = model_name
-        self._model = None
-        self._lock = threading.Lock()
-        self._needs_prefix = "e5" in model_name.lower()
 
-    def _ensure_loaded(self):
-        if self._model is None:
-            with self._lock:
-                if self._model is None:
-                    logger.info("=" * 60)
-                    logger.info("EMBEDDING MODEL LOAD START")
-                    logger.info("Model: %s", self.model_name)
-                    logger.info("=" * 60)
+        self.api_url = (
+            "https://router.huggingface.co/"
+            "hf-inference/models/"
+            f"{model_name}/pipeline/feature-extraction"
+        )
 
-                    import time
-                    start = time.time()
+        self.timeout = 120
 
-                    from sentence_transformers import SentenceTransformer
+    # ========================================================
+    # HEADERS
+    # ========================================================
 
-                    logger.info("Downloading/loading SentenceTransformer model...")
-                    self._model = SentenceTransformer(self.model_name)
+    def _headers(self) -> dict:
 
-                    elapsed = time.time() - start
+        if not settings.HF_TOKEN:
+            raise RuntimeError(
+                "HF_TOKEN is not configured."
+            )
 
-                    logger.info("=" * 60)
-                    logger.info(
-                        "EMBEDDING MODEL LOADED SUCCESSFULLY"
-                    )
-                    logger.info("Model: %s", self.model_name)
-                    logger.info("Load time: %.2f seconds", elapsed)
-                    logger.info("=" * 60)
+        return {
+            "Authorization": (
+                f"Bearer {settings.HF_TOKEN}"
+            ),
+            "Content-Type": "application/json",
+        }
 
-        return self._model
+    # ========================================================
+    # EMBED
+    # ========================================================
 
-    def embed_texts(self, texts: List[str]) -> np.ndarray:
-        model = self._ensure_loaded()
-    
+    def _embed(
+        self,
+        texts: List[str],
+    ) -> np.ndarray:
+
+        if not texts:
+            return np.empty(
+                (0, 384),
+                dtype="float32",
+            )
+
         logger.info(
-            "START EMBEDDING: %d chunks",
-            len(texts)
-        )
-    
-        prefixed = (
-            [f"passage: {t}" for t in texts]
-            if self._needs_prefix
-            else texts
-        )
-    
-        import time
-        start = time.time()
-    
-        embeddings = model.encode(
-            prefixed,
-            show_progress_bar=False,
-            normalize_embeddings=True,
-            batch_size=4,
-        )
-    
-        elapsed = time.time() - start
-    
-        logger.info(
-            "EMBEDDING COMPLETE: %d chunks in %.2f seconds",
+            "REMOTE EMBEDDING START | model=%s | texts=%d",
+            self.model_name,
             len(texts),
-            elapsed
         )
-    
+
+        start = time.time()
+
+        response = requests.post(
+            self.api_url,
+            headers=self._headers(),
+            json={
+                "inputs": texts,
+            },
+            timeout=self.timeout,
+        )
+
+        # ----------------------------------------------------
+        # Model may temporarily be loading on Hugging Face.
+        # ----------------------------------------------------
+
+        if response.status_code == 503:
+
+            try:
+                error_data = response.json()
+            except Exception:
+                error_data = {}
+
+            wait_time = error_data.get(
+                "estimated_time"
+            )
+
+            raise RuntimeError(
+                "Hugging Face embedding model is "
+                "currently loading. "
+                f"Estimated wait: {wait_time}"
+            )
+
+        if response.status_code != 200:
+
+            logger.error(
+                "Hugging Face embedding API failed | "
+                "status=%s | response=%s",
+                response.status_code,
+                response.text[:1000],
+            )
+
+            response.raise_for_status()
+
+        data = response.json()
+
+        embeddings = np.asarray(
+            data,
+            dtype="float32",
+        )
+
+        # ----------------------------------------------------
+        # Hugging Face can return:
+        #
+        # [chunks][tokens][dimensions]
+        #
+        # for feature extraction.
+        #
+        # For sentence embeddings we need:
+        #
+        # [chunks][dimensions]
+        #
+        # Mean-pool token embeddings.
+        # ----------------------------------------------------
+
+        if embeddings.ndim == 3:
+
+            attention_mask = None
+
+            pooled = embeddings.mean(
+                axis=1
+            )
+
+            embeddings = pooled
+
+        elif embeddings.ndim == 2:
+
+            # Already sentence-level embeddings.
+            pass
+
+        elif embeddings.ndim == 1:
+
+            embeddings = embeddings.reshape(
+                1,
+                -1,
+            )
+
+        else:
+
+            raise RuntimeError(
+                "Unexpected embedding response shape: "
+                f"{embeddings.shape}"
+            )
+
+        # ----------------------------------------------------
+        # Normalize exactly as before.
+        # ----------------------------------------------------
+
+        norms = np.linalg.norm(
+            embeddings,
+            axis=1,
+            keepdims=True,
+        )
+
+        norms = np.maximum(
+            norms,
+            1e-12,
+        )
+
+        embeddings = (
+            embeddings / norms
+        )
+
+        embeddings = embeddings.astype(
+            "float32"
+        )
+
+        elapsed = time.time() - start
+
         logger.info(
-            "Embedding shape: %s",
-            embeddings.shape
+            "REMOTE EMBEDDING COMPLETE | "
+            "texts=%d | shape=%s | time=%.2fs",
+            len(texts),
+            embeddings.shape,
+            elapsed,
         )
-    
-        return embeddings.astype("float32")
 
-    def embed_query(self, query: str) -> np.ndarray:
-        model = self._ensure_loaded()
-        text = f"query: {query}" if self._needs_prefix else query
-        embedding = model.encode(text, normalize_embeddings=True)
-        return embedding.reshape(1, -1).astype("float32")
+        return embeddings
+
+    # ========================================================
+    # DOCUMENT CHUNKS
+    # ========================================================
+
+    def embed_texts(
+        self,
+        texts: List[str],
+    ) -> np.ndarray:
+
+        return self._embed(
+            texts
+        )
+
+    # ========================================================
+    # QUERY
+    # ========================================================
+
+    def embed_query(
+        self,
+        query: str,
+    ) -> np.ndarray:
+
+        embeddings = self._embed(
+            [query]
+        )
+
+        return embeddings
 
 
-embedding_service = EmbeddingService(settings.EMBEDDING_MODEL)
+# ============================================================
+# SINGLETON
+# ============================================================
+
+embedding_service = EmbeddingService(
+    settings.EMBEDDING_MODEL
+)

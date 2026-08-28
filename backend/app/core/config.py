@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     # ============================================================
 
     EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
+    HF_TOKEN: str
 
     RETRIEVAL_TOP_K: int = 5
     RETRIEVAL_TOP_SCORE_THRESHOLD: float = 0.62
@@ -75,13 +76,13 @@ class Settings(BaseSettings):
     # ============================================================
     # FILE UPLOAD
     # ============================================================
-    
+
     MAX_UPLOAD_MB: int = 20
-    
+
     ALLOWED_UPLOAD_EXTENSIONS: str = (
         ".pdf,.docx,.txt"
     )
-    
+
     # ============================================================
     # SUPABASE
     # ============================================================
@@ -107,7 +108,9 @@ class Settings(BaseSettings):
         "LLM_API_KEY",
         "SUPABASE_URL",
         "SUPABASE_SECRET_KEY",
+        "HF_TOKEN",
     )
+    
     @classmethod
     def not_empty(cls, v: str) -> str:
 
