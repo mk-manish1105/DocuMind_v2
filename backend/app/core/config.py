@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     MAX_UPLOAD_MB: int = 20
 
     ALLOWED_UPLOAD_EXTENSIONS: str = (
-        ".pdf,.docx,.txt"
+        ".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp"
     )
 
     # ============================================================

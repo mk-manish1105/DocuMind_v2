@@ -20,12 +20,15 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def ocr_page_image(
+def ocr_image_bytes(
     image_bytes: bytes,
+    filename: str = "page.png",
+    content_type: str = "image/png",
 ) -> Optional[str]:
     """
-    Send a single rendered page image to OCR.space and return
-    the extracted text.
+    Send a single image (a rendered PDF page, or a directly
+    uploaded image such as a screenshot) to OCR.space and
+    return the extracted text.
 
     Returns None if OCR is not configured, or if the request
     fails for any reason. Callers should treat None the same
@@ -36,7 +39,7 @@ def ocr_page_image(
 
         logger.warning(
             "OCR_SPACE_API_KEY is not configured. "
-            "Skipping OCR for scanned page."
+            "Skipping OCR for image."
         )
 
         return None
@@ -47,9 +50,9 @@ def ocr_page_image(
             settings.OCR_SPACE_API_URL,
             files={
                 "file": (
-                    "page.png",
+                    filename,
                     image_bytes,
-                    "image/png",
+                    content_type,
                 ),
             },
             data={
@@ -109,3 +112,19 @@ def ocr_page_image(
         )
 
         return None
+
+
+def ocr_page_image(
+    image_bytes: bytes,
+) -> Optional[str]:
+    """
+    Backward-compatible wrapper for rendered PDF pages
+    (always PNG). Use ocr_image_bytes() directly for
+    anything else, such as a directly uploaded image.
+    """
+
+    return ocr_image_bytes(
+        image_bytes,
+        filename="page.png",
+        content_type="image/png",
+    )

@@ -30,7 +30,7 @@ import fitz  # PyMuPDF
 from docx import Document as DocxDocument
 
 from app.core.config import settings
-from app.services.ocr import ocr_page_image
+from app.services.ocr import ocr_image_bytes, ocr_page_image
 
 
 logger = logging.getLogger(__name__)
@@ -140,6 +140,22 @@ def extract_text_from_file(
         if extension == ".docx":
 
             return _extract_docx(
+                path
+            )
+
+
+        # ====================================================
+        # IMAGE (e.g. screenshots)
+        # ====================================================
+
+        if extension in {
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".webp",
+        }:
+
+            return _extract_image(
                 path
             )
 
@@ -327,6 +343,79 @@ def _extract_pdf(
         )
 
     return extracted
+
+
+# ============================================================
+# IMAGE EXTRACTION (e.g. screenshots)
+# ============================================================
+
+_IMAGE_CONTENT_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
+
+
+def _extract_image(
+    path: Path,
+) -> str:
+    """
+    Extract text from a directly uploaded image (such as a
+    screenshot) using OCR.
+
+    Unlike a scanned PDF page, there is no "try text first"
+    step here — an image file has no embedded text layer, so
+    OCR is always used.
+    """
+
+    extension = path.suffix.lower()
+
+    content_type = _IMAGE_CONTENT_TYPES.get(
+        extension,
+        "image/png",
+    )
+
+    logger.info(
+        "Extracting image via OCR: %s",
+        path.name,
+    )
+
+    try:
+
+        image_bytes = path.read_bytes()
+
+    except Exception:
+
+        logger.exception(
+            "Failed to read image file: %s",
+            path,
+        )
+
+        return ""
+
+    text = ocr_image_bytes(
+        image_bytes,
+        filename=path.name,
+        content_type=content_type,
+    )
+
+    if not text:
+
+        logger.warning(
+            "OCR returned no text for image: %s",
+            path,
+        )
+
+        return ""
+
+    logger.info(
+        "OCR succeeded for image %s: %d characters",
+        path.name,
+        len(text),
+    )
+
+    return text.strip()
 
 
 # ============================================================

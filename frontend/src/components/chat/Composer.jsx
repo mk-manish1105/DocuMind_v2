@@ -17,6 +17,10 @@ const ALLOWED_EXTENSIONS = [
   ".pdf",
   ".docx",
   ".txt",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
 ];
 
 
@@ -297,7 +301,7 @@ export default function Composer({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.docx,.txt"
+            accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp"
             className="hidden"
             onChange={
               handleFileChange

@@ -168,7 +168,7 @@ export default function Sidebar({
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.docx,.txt"
+                accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp"
                 className="hidden"
                 onChange={(e) => {
                   if (e.target.files?.length) onUpload(e.target.files);
@@ -186,7 +186,7 @@ export default function Sidebar({
                   </>
                 ) : (
                   <>
-                    <Upload className="h-4 w-4" /> Upload PDF, DOCX, TXT
+                    <Upload className="h-4 w-4" /> Upload Document
                   </>
                 )}
               </button>

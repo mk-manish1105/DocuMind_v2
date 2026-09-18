@@ -939,14 +939,18 @@ async def _extract_temporary_file(
         ".pdf",
         ".docx",
         ".txt",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
     }
 
     if extension not in allowed_extensions:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Only PDF, DOCX and TXT files "
-                "are supported."
+                "Only PDF, DOCX, TXT, PNG, JPG "
+                "and WEBP files are supported."
             ),
         )
 
