@@ -84,6 +84,16 @@ class Settings(BaseSettings):
     )
 
     # ============================================================
+    # OCR (SCANNED / IMAGE-ONLY PDFS)
+    # ============================================================
+
+    OCR_SPACE_API_KEY: str = ""
+    OCR_SPACE_API_URL: str = (
+        "https://api.ocr.space/parse/image"
+    )
+    OCR_MAX_PAGES_PER_DOCUMENT: int = 15
+
+    # ============================================================
     # SUPABASE
     # ============================================================
 

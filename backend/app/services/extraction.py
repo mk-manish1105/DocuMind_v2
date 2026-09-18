@@ -29,6 +29,9 @@ from typing import List, Union
 import fitz  # PyMuPDF
 from docx import Document as DocxDocument
 
+from app.core.config import settings
+from app.services.ocr import ocr_page_image
+
 
 logger = logging.getLogger(__name__)
 
@@ -214,10 +217,15 @@ def _extract_pdf(
         - assignments
         - documentation
 
-    It does NOT perform OCR on scanned/image-only PDFs.
+    For pages where PyMuPDF finds NO text (i.e. the page is a
+    scanned image), the page is rendered to a PNG and sent to
+    a free OCR API as a fallback. This keeps normal text-based
+    PDFs fast (no OCR calls) while still handling scanned pages.
     """
 
     page_texts = []
+
+    ocr_pages_used = 0
 
     with fitz.open(
         str(path)
@@ -242,6 +250,58 @@ def _extract_pdf(
 
                 text = text.strip()
 
+                # ------------------------------------------------
+                # OCR FALLBACK
+                #
+                # No extractable text usually means this page is
+                # a scanned image rather than real text.
+                # ------------------------------------------------
+
+                if (
+                    not text
+                    and ocr_pages_used
+                    < settings.OCR_MAX_PAGES_PER_DOCUMENT
+                ):
+
+                    logger.info(
+                        "Page %d has no extractable text. "
+                        "Attempting OCR.",
+                        page_number,
+                    )
+
+                    pixmap = page.get_pixmap(
+                        dpi=200
+                    )
+
+                    image_bytes = pixmap.tobytes(
+                        "png"
+                    )
+
+                    ocr_text = ocr_page_image(
+                        image_bytes
+                    )
+
+                    ocr_pages_used += 1
+
+                    if ocr_text:
+
+                        text = ocr_text.strip()
+
+                        logger.info(
+                            "OCR succeeded for page %d: "
+                            "%d characters",
+                            page_number,
+                            len(text),
+                        )
+
+                    else:
+
+                        logger.warning(
+                            "OCR returned no text for "
+                            "page %d.",
+                            page_number,
+                        )
+
                 if text:
                     page_texts.append(
                         f"[Page {page_number}]\n{text}"
@@ -261,8 +321,8 @@ def _extract_pdf(
     if not extracted.strip():
 
         logger.warning(
-            "No text could be extracted from PDF: %s. "
-            "The PDF may be scanned/image-only.",
+            "No text could be extracted from PDF: %s "
+            "even after OCR.",
             path,
         )
 
