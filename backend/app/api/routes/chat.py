@@ -216,20 +216,36 @@ def _generate_smart_title(question: str) -> Optional[str]:
 
     title = chat_completion(
         title_messages,
-        max_tokens=20,
+        max_tokens=80,
         temperature=0.3,
     )
 
     if not title:
+        logger.warning(
+            "Smart title generation returned no "
+            "result; falling back to raw question."
+        )
         return None
 
     title = title.strip().strip("`\"'")
     title = re.sub(r"\s+", " ", title).strip()
 
     if not title:
+        logger.warning(
+            "Smart title generation returned an "
+            "empty string after cleanup; falling "
+            "back to raw question."
+        )
         return None
 
-    return title[:60]
+    title = title[:60]
+
+    logger.info(
+        "Smart title generated: %s",
+        title,
+    )
+
+    return title
 
 
 
@@ -575,7 +591,7 @@ def _rewrite_follow_up_question(
 
     rewritten = chat_completion(
         rewrite_messages,
-        max_tokens=100,
+        max_tokens=180,
         temperature=0.0,
     )
 

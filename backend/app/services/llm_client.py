@@ -191,6 +191,17 @@ def chat_completion(
         )
 
         if not content:
+
+            logger.warning(
+                "LLM non-streaming response had "
+                "empty content | max_tokens=%s | "
+                "finish_reason=%s",
+                max_tokens,
+                data["choices"][0].get(
+                    "finish_reason"
+                ),
+            )
+
             return None
 
         return content.strip()
