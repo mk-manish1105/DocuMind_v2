@@ -179,6 +179,60 @@ def _derive_title(question: str) -> str:
     ).strip()[:60]
 
 
+
+def _generate_smart_title(question: str) -> Optional[str]:
+    """
+    Generate a short, human-friendly chat title from the
+    user's first question using the LLM — similar to how
+    ChatGPT/Claude title conversations.
+
+    Returns None on failure so the caller can fall back to
+    the simple truncation in _derive_title().
+    """
+
+    title_messages = [
+        {
+            "role": "system",
+            "content": (
+                "You generate short chat titles, similar to "
+                "ChatGPT or Claude conversation titles.\n\n"
+                "Rules:\n"
+                "1. 3 to 6 words.\n"
+                "2. Describe the topic or intent, not a literal "
+                "copy of the question.\n"
+                "3. No quotation marks.\n"
+                "4. No trailing punctuation.\n"
+                "5. Return ONLY the title text."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Question:\n{question}\n\n"
+                "Generate a short title for this conversation."
+            ),
+        },
+    ]
+
+    title = chat_completion(
+        title_messages,
+        max_tokens=20,
+        temperature=0.3,
+    )
+
+    if not title:
+        return None
+
+    title = title.strip().strip("`\"'")
+    title = re.sub(r"\s+", " ", title).strip()
+
+    if not title:
+        return None
+
+    return title[:60]
+
+
+
 # ============================================================
 # SAME-SESSION CONVERSATION CONTEXT
 # ============================================================
@@ -1207,20 +1261,28 @@ async def send_message(
         # SESSION TITLE
         # ====================================================
 
+
         if not (
             session.title
             and session.title.strip()
         ):
 
-            title = _derive_title(
+            title = _generate_smart_title(
                 question
             )
+
+            if not title:
+
+                title = _derive_title(
+                    question
+                )
 
             if title:
 
                 session.title = title
 
                 db.commit()
+
 
 
     # ========================================================
