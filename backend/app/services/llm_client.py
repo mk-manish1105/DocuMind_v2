@@ -159,6 +159,7 @@ def chat_completion(
         "max_tokens": max_tokens,
         "temperature": temperature,
         "stream": False,
+        "reasoning_effort": "low",
     }
 
     try:

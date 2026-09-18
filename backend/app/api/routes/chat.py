@@ -216,7 +216,7 @@ def _generate_smart_title(question: str) -> Optional[str]:
 
     title = chat_completion(
         title_messages,
-        max_tokens=80,
+        max_tokens=300,
         temperature=0.3,
     )
 
@@ -591,7 +591,7 @@ def _rewrite_follow_up_question(
 
     rewritten = chat_completion(
         rewrite_messages,
-        max_tokens=180,
+        max_tokens=350,
         temperature=0.0,
     )
 
