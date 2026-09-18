@@ -560,9 +560,11 @@ export default function ChatPage() {
     stopStreaming,
     isStreaming,
   } = useChatStream({
+    messages,
     setMessages,
     sessionId:
       activeSessionId,
+    isGuest,
 
     onSessionCreated:
       (id) => {

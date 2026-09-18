@@ -179,9 +179,6 @@ def _derive_title(question: str) -> str:
     ).strip()[:60]
 
 
-
-
-
 # ============================================================
 # SAME-SESSION CONVERSATION CONTEXT
 # ============================================================
@@ -261,6 +258,74 @@ def _get_recent_session_messages(
         )
 
     return result
+
+
+# ============================================================
+# GUEST CONVERSATION CONTEXT
+# ============================================================
+
+def _parse_guest_history(
+    guest_history: Optional[str],
+) -> list:
+    """
+    Parse the frontend-supplied conversation history for
+    guest users.
+
+    IMPORTANT:
+        - This is ONLY ever used when current_user is None.
+        - Nothing here is persisted to the database.
+        - The result is trimmed to the same limits used for
+          authenticated session history, so guests cannot use
+          this to inflate the LLM context window.
+    """
+
+    if not guest_history:
+        return []
+
+    try:
+        parsed = json.loads(guest_history)
+
+    except (json.JSONDecodeError, TypeError):
+
+        logger.warning(
+            "Failed to parse guest_history; ignoring."
+        )
+
+        return []
+
+    if not isinstance(parsed, list):
+        return []
+
+    trimmed = []
+
+    for item in parsed[-SESSION_CONTEXT_MESSAGE_LIMIT:]:
+
+        if not isinstance(item, dict):
+            continue
+
+        role = item.get("role")
+
+        content = (
+            item.get("content")
+            or ""
+        ).strip()
+
+        if role not in ("user", "assistant"):
+            continue
+
+        if not content:
+            continue
+
+        trimmed.append(
+            {
+                "role": role,
+                "content": content[
+                    :SESSION_MESSAGE_CHAR_LIMIT
+                ],
+            }
+        )
+
+    return trimmed
 
 
 def _looks_like_follow_up(
@@ -493,13 +558,6 @@ def _rewrite_follow_up_question(
     return rewritten
 
 
-# ============================================================
-# PERMANENT DOCUMENT RETRIEVAL
-# ============================================================
-
-# ============================================================
-# PERMANENT DOCUMENT RETRIEVAL
-# ============================================================
 # ============================================================
 # PERMANENT DOCUMENT RETRIEVAL
 # ============================================================
@@ -936,6 +994,10 @@ async def send_message(
         None
     ),
 
+    guest_history: Optional[str] = Form(
+        None
+    ),
+
     max_tokens: int = Form(700),
 
     current_user: Optional[User] = Depends(
@@ -974,6 +1036,55 @@ async def send_message(
     #
     # For follow-up questions it becomes a standalone question.
     retrieval_question = question
+
+
+    # ========================================================
+    # GUEST CONVERSATION CONTEXT
+    #
+    # Guests have no persisted ChatMessage rows, so the
+    # frontend sends its own in-memory recent messages.
+    #
+    # This is ONLY ever used when there is no authenticated
+    # user. An authenticated request's history always comes
+    # from the database below, never from this field.
+    # ========================================================
+
+    if not current_user:
+
+        recent_messages = _parse_guest_history(
+            guest_history
+        )
+
+        if recent_messages:
+            logger.info(
+                "Guest: using %d client-supplied recent "
+                "messages for conversation context.",
+                len(recent_messages),
+            )
+
+
+    # ========================================================
+    # FOLLOW-UP QUESTION REWRITING
+    #
+    # Applies to both authenticated users and guests, using
+    # whichever recent_messages was populated above.
+    # ========================================================
+
+    if _looks_like_follow_up(
+        question,
+        recent_messages,
+    ):
+
+        retrieval_question = (
+            _rewrite_follow_up_question(
+                question,
+                recent_messages,
+            )
+        )
+
+    else:
+
+        retrieval_question = question
 
 
     # ========================================================
@@ -1040,6 +1151,10 @@ async def send_message(
 
         # ====================================================
         # FOLLOW-UP QUESTION REWRITING
+        #
+        # Re-evaluated here using the authoritative DB-sourced
+        # history, overriding whatever the pre-auth block above
+        # computed (which only applies to guests).
         # ====================================================
 
         if _looks_like_follow_up(

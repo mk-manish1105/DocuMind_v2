@@ -41,11 +41,18 @@ export async function fetchHistory(sessionId) {
  *
  * The temporary file is sent directly to /chat.
  * It is NOT sent through /documents/upload.
+ *
+ * Guest conversation context:
+ *   Guests have no persisted server-side chat history, so
+ *   the frontend sends its own recent in-memory messages via
+ *   `history`. This is ignored by the backend for
+ *   authenticated users, who always use DB-sourced history.
  */
 export async function streamChatMessage({
   question,
   sessionId,
   attachmentFile,
+  history,
   onToken,
   signal,
 }) {
@@ -73,6 +80,16 @@ export async function streamChatMessage({
       "file",
       attachmentFile,
       attachmentFile.name
+    );
+  }
+
+  if (
+    history &&
+    history.length > 0
+  ) {
+    formData.append(
+      "guest_history",
+      JSON.stringify(history)
     );
   }
 

@@ -1,9 +1,14 @@
 import { useRef, useState } from "react";
 import { streamChatMessage } from "../api/chat";
 
+const SESSION_CONTEXT_MESSAGE_LIMIT = 4;
+const SESSION_MESSAGE_CHAR_LIMIT = 1500;
+
 export function useChatStream({
+  messages,
   setMessages,
   sessionId,
+  isGuest,
   onSessionCreated,
   onTemporaryAttachmentConsumed,
 }) {
@@ -30,6 +35,31 @@ export function useChatStream({
       pending: true,
     };
 
+    // ========================================================
+    // GUEST CONVERSATION HISTORY
+    //
+    // Guests have no persisted server-side chat history, so we
+    // build it from the messages already in memory and send it
+    // along with the request. This is captured BEFORE the new
+    // optimistic messages are appended below, so it reflects
+    // only prior turns.
+    //
+    // This is only ever used for guests — authenticated users
+    // always rely on DB-sourced history on the backend.
+    // ========================================================
+
+    let historyPayload = null;
+
+    if (isGuest) {
+      historyPayload = messages
+        .filter((m) => m.content && !m.pending)
+        .slice(-SESSION_CONTEXT_MESSAGE_LIMIT)
+        .map((m) => ({
+          role: m.role,
+          content: m.content.slice(0, SESSION_MESSAGE_CHAR_LIMIT),
+        }));
+    }
+
     // Functional update avoids stale state
     setMessages((prev) => [
       ...prev,
@@ -49,6 +79,7 @@ export function useChatStream({
         question,
         sessionId,
         attachmentFile,
+        history: historyPayload,
         signal: controller.signal,
 
         onToken: (token) => {
