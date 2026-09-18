@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     )
     LLM_MODEL: str = "openai/gpt-oss-20b"
 
-    LLM_MAX_TOKENS_CAP: int = 1600
+    LLM_MAX_TOKENS_CAP: int = 3000
     LLM_REQUEST_TIMEOUT_CONNECT: int = 10
     LLM_REQUEST_TIMEOUT_READ: int = 300
 

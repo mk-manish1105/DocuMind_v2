@@ -78,7 +78,7 @@ export async function streamChatMessage({
 
   formData.append(
     "max_tokens",
-    "700"
+    "1600"
   );
 
   const response = await fetch(

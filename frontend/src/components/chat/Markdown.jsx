@@ -2,6 +2,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import CodeBlock from "./CodeBlock";
+import rehypeRaw from "rehype-raw";
 
 const components = {
   pre: CodeBlock,
@@ -29,7 +30,7 @@ export default function Markdown({ content }) {
     <div className="markdown-body w-full min-w-0">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
+        rehypePlugins={[rehypeRaw, rehypeHighlight]}
         components={components}
       >
         {content}
