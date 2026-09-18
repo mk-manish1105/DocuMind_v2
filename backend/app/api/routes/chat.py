@@ -1116,18 +1116,19 @@ async def send_message(
 
     # ========================================================
     # TEMPORARY ATTACHMENT MODE
+    #
+    # Available to BOTH authenticated users and guests.
+    #
+    # Nothing is persisted:
+    #   - no Document record
+    #   - no Supabase Storage upload
+    #   - no permanent chunks or embeddings
+    #
+    # The file is extracted from a temporary OS file which is
+    # deleted immediately after extraction.
     # ========================================================
 
     if file is not None:
-
-        if not current_user:
-            raise HTTPException(
-                status_code=401,
-                detail=(
-                    "Please sign in to attach "
-                    "a temporary document."
-                ),
-            )
 
         logger.info(
             "Temporary document attached: %s",
@@ -1137,6 +1138,7 @@ async def send_message(
         extracted_text = await _extract_temporary_file(
             file
         )
+
 
         cleaned_text = clean_text(
             extracted_text
