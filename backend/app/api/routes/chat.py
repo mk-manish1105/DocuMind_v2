@@ -43,6 +43,7 @@ from fastapi import (
     UploadFile,
 )
 
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -1001,8 +1002,11 @@ async def _extract_temporary_file(
         # Pass the Path object itself.
         # Some extraction implementations expect
         # a Path rather than a string.
-        extracted_text = extract_text_from_file(
-            temporary_path
+        # Run in a worker thread so slow OCR network calls
+        # do not block the whole server.
+        extracted_text = await run_in_threadpool(
+            extract_text_from_file,
+            temporary_path,
         )
 
         if extracted_text is None:
@@ -1023,8 +1027,8 @@ async def _extract_temporary_file(
             status_code=400,
             detail=(
                 "Could not read the attached "
-                "document. Please make sure the "
-                "PDF, DOCX or TXT file contains "
+                "file. Please make sure the "
+                "PDF, DOCX, TXT or image contains "
                 "readable text."
             ),
         ) from exc
@@ -1345,10 +1349,10 @@ async def send_message(
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "Could not extract readable "
-                    "text from the attached document. "
-                    "If this is a scanned PDF, OCR may "
-                    "be required."
+                    "Could not find any readable "
+                    "text in the attached file. "
+                    "For images, please use a clear, "
+                    "well-lit picture with visible text."
                 ),
             )
 

@@ -274,7 +274,7 @@ def _extract_pdf(
                 # ------------------------------------------------
 
                 if (
-                    not text
+                    len(text) < 20
                     and ocr_pages_used
                     < settings.OCR_MAX_PAGES_PER_DOCUMENT
                 ):
@@ -299,7 +299,10 @@ def _extract_pdf(
 
                     ocr_pages_used += 1
 
-                    if ocr_text:
+                    if (
+                        ocr_text
+                        and len(ocr_text.strip()) > len(text)
+                    ):
 
                         text = ocr_text.strip()
 
@@ -497,6 +500,59 @@ def _extract_docx(
 
             parts.extend(
                 table_parts
+            )
+
+
+    # --------------------------------------------------------
+    # Embedded images (screenshots, scanned pages, etc.)
+    # --------------------------------------------------------
+
+    ocr_images_used = 0
+
+    for relationship in document.part.rels.values():
+
+        if (
+            ocr_images_used
+            >= settings.OCR_MAX_PAGES_PER_DOCUMENT
+        ):
+            break
+
+        if "image" not in relationship.reltype:
+            continue
+
+        try:
+
+            image_blob = (
+                relationship.target_part.blob
+            )
+
+            # Skip tiny images such as bullets and icons.
+            if len(image_blob) < 5 * 1024:
+                continue
+
+            ocr_images_used += 1
+
+            ocr_text = ocr_image_bytes(
+                image_blob,
+                filename="docx_image.png",
+                content_type="image/png",
+            )
+
+            if ocr_text:
+
+                parts.append(
+                    f"[Image {ocr_images_used}]"
+                )
+
+                parts.append(
+                    ocr_text.strip()
+                )
+
+        except Exception:
+
+            logger.exception(
+                "Failed to OCR an embedded DOCX image: %s",
+                path,
             )
 
 

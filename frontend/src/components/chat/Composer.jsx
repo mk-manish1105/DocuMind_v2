@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   ArrowUp,
@@ -43,6 +43,36 @@ export default function Composer({
       value
     );
 
+  /*
+   * Small thumbnail shown in the attachment chip
+   * when the attached file is an image.
+   */
+  const [previewUrl, setPreviewUrl] =
+    useState(null);
+
+  useEffect(() => {
+    if (
+      !attachedFile ||
+      !attachedFile.type?.startsWith(
+        "image/"
+      )
+    ) {
+      setPreviewUrl(null);
+      return undefined;
+    }
+
+    const url =
+      URL.createObjectURL(
+        attachedFile
+      );
+
+    setPreviewUrl(url);
+
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [attachedFile]);
+
 
   function handleFileChange(
     event
@@ -67,7 +97,7 @@ export default function Composer({
       )
     ) {
       alert(
-        "Only PDF, DOCX and TXT files are supported."
+        "Only PDF, DOCX, TXT, PNG, JPG and WEBP files are supported."
       );
 
       event.target.value =
@@ -113,6 +143,58 @@ export default function Composer({
   }
 
 
+  /*
+   * Lets the user press Ctrl+V (or long-press > Paste)
+   * to attach a screenshot straight from the clipboard.
+   */
+  function handlePaste(
+    event
+  ) {
+    const pastedFile =
+      event.clipboardData
+        ?.files?.[0];
+
+    if (
+      !pastedFile ||
+      ![
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+      ].includes(pastedFile.type)
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (
+      pastedFile.size >
+      MAX_FILE_SIZE_MB *
+        1024 *
+        1024
+    ) {
+      alert(
+        `File must be smaller than ${MAX_FILE_SIZE_MB} MB.`
+      );
+
+      return;
+    }
+
+    const subtype =
+      pastedFile.type === "image/jpeg"
+        ? "jpg"
+        : pastedFile.type.split("/")[1];
+
+    onAttachFile(
+      new File(
+        [pastedFile],
+        `pasted-image-${Date.now()}.${subtype}`,
+        { type: pastedFile.type }
+      )
+    );
+  }
+
+
   function handleSubmit(
     event
   ) {
@@ -141,9 +223,16 @@ export default function Composer({
      * automatically ask the backend to
      * analyze it.
      */
+    const isImage =
+      attachedFile?.type?.startsWith(
+        "image/"
+      );
+
     const question =
       trimmed ||
-      "Please analyze and summarize this document.";
+      (isImage
+        ? "Read all the text in this image and explain what it says."
+        : "Please analyze and summarize this document.");
 
     /*
      * Send:
@@ -210,19 +299,28 @@ export default function Composer({
             <div
               className="
                 flex
-                h-9
-                w-9
+                h-10
+                w-10
                 shrink-0
                 items-center
                 justify-center
+                overflow-hidden
                 rounded-lg
                 bg-brand-100
                 text-brand-600
               "
             >
-              <FileText
-                className="h-4 w-4"
-              />
+              {previewUrl ? (
+                <img
+                  src={previewUrl}
+                  alt="Attached preview"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <FileText
+                  className="h-4 w-4"
+                />
+              )}
             </div>
 
 
@@ -301,7 +399,7 @@ export default function Composer({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp"
+            accept=".pdf,.docx,.txt,image/png,image/jpeg,image/webp"
             className="hidden"
             onChange={
               handleFileChange
@@ -362,6 +460,7 @@ export default function Composer({
                 event.target.value
               )
             }
+            onPaste={handlePaste}
             onKeyDown={(event) => {
               if (
                 event.key ===

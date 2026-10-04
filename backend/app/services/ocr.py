@@ -10,14 +10,162 @@ extraction returned nothing — i.e. pages that are scanned images
 rather than real text.
 """
 
+import io
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 import requests
+from PIL import Image, ImageOps
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# OCR.SPACE FILE-SIZE LIMIT
+#
+# The FREE OCR.space key rejects any file larger than 1 MB.
+# Phone photos and screenshots are usually bigger than that,
+# so every image is shrunk below this limit before upload.
+# ============================================================
+
+OCR_MAX_BYTES = 900 * 1024
+
+OCR_MAX_DIMENSION = 2600
+
+_OCR_NATIVE_TYPES = {
+    "image/png",
+    "image/jpeg",
+}
+
+
+def _prepare_image_for_ocr(
+    image_bytes: bytes,
+    filename: str,
+    content_type: str,
+) -> Tuple[bytes, str, str]:
+    """
+    Make sure an image is something OCR.space will accept.
+
+    - PNG / JPEG under the size limit are sent untouched.
+    - WEBP (not supported by OCR.space) is converted to JPEG.
+    - Large images are downscaled and re-encoded as JPEG
+      until they fit under OCR_MAX_BYTES.
+    - Phone-camera rotation (EXIF) is applied so the text
+      is upright for OCR.
+    """
+
+    try:
+
+        image = Image.open(
+            io.BytesIO(image_bytes)
+        )
+
+        detected_type = {
+            "PNG": "image/png",
+            "JPEG": "image/jpeg",
+        }.get(image.format or "")
+
+        if (
+            detected_type in _OCR_NATIVE_TYPES
+            and len(image_bytes) <= OCR_MAX_BYTES
+        ):
+            return (
+                image_bytes,
+                filename,
+                detected_type,
+            )
+
+        image = ImageOps.exif_transpose(
+            image
+        )
+
+        if image.mode in ("RGBA", "LA", "P"):
+
+            image = image.convert("RGBA")
+
+            background = Image.new(
+                "RGB",
+                image.size,
+                (255, 255, 255),
+            )
+
+            background.paste(
+                image,
+                mask=image.split()[-1],
+            )
+
+            image = background
+
+        else:
+
+            image = image.convert("RGB")
+
+        longest_side = max(image.size)
+
+        if longest_side > OCR_MAX_DIMENSION:
+
+            scale = OCR_MAX_DIMENSION / longest_side
+
+            image = image.resize(
+                (
+                    max(1, int(image.width * scale)),
+                    max(1, int(image.height * scale)),
+                ),
+                Image.LANCZOS,
+            )
+
+        output = image_bytes
+
+        for _ in range(8):
+
+            for quality in (85, 75, 65, 55):
+
+                buffer = io.BytesIO()
+
+                image.save(
+                    buffer,
+                    format="JPEG",
+                    quality=quality,
+                    optimize=True,
+                )
+
+                output = buffer.getvalue()
+
+                if len(output) <= OCR_MAX_BYTES:
+
+                    logger.info(
+                        "Prepared image for OCR: "
+                        "%d -> %d bytes",
+                        len(image_bytes),
+                        len(output),
+                    )
+
+                    return (
+                        output,
+                        "image.jpg",
+                        "image/jpeg",
+                    )
+
+            image = image.resize(
+                (
+                    max(1, int(image.width * 0.8)),
+                    max(1, int(image.height * 0.8)),
+                ),
+                Image.LANCZOS,
+            )
+
+        return output, "image.jpg", "image/jpeg"
+
+    except Exception:
+
+        logger.exception(
+            "Could not prepare image for OCR. "
+            "Sending the original bytes."
+        )
+
+        return image_bytes, filename, content_type
 
 
 def ocr_image_bytes(
@@ -45,6 +193,14 @@ def ocr_image_bytes(
         return None
 
     try:
+
+        image_bytes, filename, content_type = (
+            _prepare_image_for_ocr(
+                image_bytes,
+                filename,
+                content_type,
+            )
+        )
 
         response = requests.post(
             settings.OCR_SPACE_API_URL,
