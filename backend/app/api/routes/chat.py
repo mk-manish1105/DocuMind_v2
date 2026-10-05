@@ -399,101 +399,9 @@ def _parse_guest_history(
     return trimmed
 
 
-def _looks_like_follow_up(
-    question: str,
-    recent_messages: list,
-) -> bool:
-    """
-    Lightweight heuristic to determine whether the current
-    question probably depends on the previous conversation.
-
-    We do NOT call the LLM for every question.
-
-    This saves tokens and reduces Groq TPM usage.
-
-    Examples that should be detected:
-
-        "Why did they choose it?"
-        "What is it used for?"
-        "What about caching?"
-        "And AWS?"
-        "Why?"
-        "How does that work?"
-    """
-
-    if not recent_messages:
-        return False
-
-    normalized = (
-        question
-        .strip()
-        .lower()
-    )
-
-    # Very short conversational questions are often follow-ups.
-    # Do not classify every short factual question as a follow-up.
-
-    short_follow_up_patterns = [
-        r"^why\??$",
-        r"^how\??$",
-        r"^what about\b.*",
-        r"^how about\b.*",
-        r"^and why\??$",
-        r"^and how\??$",
-        r"^and what about\b.*",
-        r"^what does that\b.*",
-        r"^what is that\b.*",
-        r"^how does that\b.*",
-    ]
-
-    if any(
-        re.search(
-            pattern,
-            normalized,
-        )
-        for pattern in short_follow_up_patterns
-    ):
-        return True
-    
-
-    follow_up_patterns = [
-        r"\bit\b",
-        r"\bits\b",
-        r"\bthey\b",
-        r"\bthem\b",
-        r"\btheir\b",
-        r"\bthis\b",
-        r"\bthat\b",
-        r"\bthese\b",
-        r"\bthose\b",
-        r"\bthe same\b",
-        r"\bwhat about\b",
-        r"\bhow about\b",
-        r"\band what\b",
-        r"\band why\b",
-        r"\band how\b",
-        r"\bwhy did they\b",
-        r"\bwhy does it\b",
-        r"\bwhy do they\b",
-        r"\bhow does it\b",
-        r"\bhow do they\b",
-        r"\bwhat does it\b",
-        r"\bwhat is it\b",
-        r"\bwhich one\b",
-        r"\bwhich of these\b",
-        r"\bthe previous\b",
-        r"\babove\b",
-        r"\bmentioned earlier\b",
-    ]
-
-    return any(
-        re.search(
-            pattern,
-            normalized,
-        )
-        for pattern in follow_up_patterns
-    )
-
+# ============================================================
+# RECENT CONVERSATION FORMATTING
+# ============================================================
 
 def _format_recent_conversation(
     recent_messages: list,
@@ -524,13 +432,25 @@ def _format_recent_conversation(
     return "\n\n".join(lines)
 
 
-def _rewrite_follow_up_question(
+# ============================================================
+# FOLLOW-UP QUESTION DETECTION + REWRITING (LLM-BASED)
+# ============================================================
+
+def _resolve_follow_up_question(
     question: str,
     recent_messages: list,
 ) -> str:
     """
-    Convert a contextual follow-up question into a standalone
-    question suitable for semantic retrieval.
+    Use the LLM to decide whether the current question is a
+    follow-up that depends on the recent conversation.
+
+    If it IS a follow-up, return a standalone question that is
+    suitable for semantic retrieval.
+
+    If it is NOT a follow-up, or anything goes wrong, return the
+    original question unchanged.
+
+    One LLM call performs BOTH detection and rewriting.
 
     Example:
 
@@ -541,9 +461,17 @@ def _rewrite_follow_up_question(
         Current:
         Why did they choose it?
 
-        Rewritten:
+        Result:
         Why did Nexora choose PostgreSQL as its database?
     """
+
+    # --------------------------------------------------------
+    # No conversation history means it cannot be a follow-up.
+    # No LLM call is needed.
+    # --------------------------------------------------------
+
+    if not recent_messages:
+        return question
 
     conversation = _format_recent_conversation(
         recent_messages
@@ -552,25 +480,59 @@ def _rewrite_follow_up_question(
     if not conversation:
         return question
 
-    rewrite_messages = [
+    detection_messages = [
         {
             "role": "system",
             "content": (
-                "You rewrite follow-up questions into "
-                "standalone search queries for a document "
-                "retrieval system.\n\n"
+                "You analyse a user's latest question in a "
+                "document question-answering chat.\n\n"
 
-                "Rules:\n"
-                "1. Resolve pronouns such as it, they, "
-                "them, this and that using the conversation.\n"
-                "2. Preserve the user's exact intent.\n"
-                "3. Add missing names, products, technologies "
-                "or entities from the recent conversation "
-                "when necessary.\n"
+                "Decide whether the latest question is a "
+                "FOLLOW-UP, meaning it cannot be understood "
+                "without the recent conversation.\n\n"
+
+                "A question IS a follow-up when it:\n"
+                "- refers back to earlier content using words "
+                "such as it, they, them, this, that, those or "
+                "the previous one\n"
+                "- is incomplete, such as 'why?', 'and AWS?', "
+                "'what about caching?'\n"
+                "- asks for more detail, an example, a simpler "
+                "explanation or a continuation of the previous "
+                "answer, such as 'explain more', 'give an "
+                "example', 'in simple words', 'elaborate'\n"
+                "- compares or contrasts with something that "
+                "was just discussed, such as 'why Redis "
+                "instead?'\n\n"
+
+                "A question is NOT a follow-up when it is fully "
+                "understandable on its own, even if it contains "
+                "words like this, that or it. For example, "
+                "'What is the purpose of this project?' is "
+                "standalone because 'this project' refers to "
+                "the document, not to the conversation. A "
+                "question that starts a completely new topic is "
+                "also NOT a follow-up.\n\n"
+
+                "If it IS a follow-up, rewrite it as a concise "
+                "standalone question for a document retrieval "
+                "system:\n"
+                "1. Resolve pronouns and references using the "
+                "conversation.\n"
+                "2. Add missing names, products, technologies "
+                "or entities when necessary.\n"
+                "3. Preserve the user's exact intent.\n"
                 "4. Do not answer the question.\n"
-                "5. Do not add new information.\n"
-                "6. Return ONLY the rewritten question.\n"
-                "7. Keep it concise."
+                "5. Do not add new information.\n\n"
+
+                "Respond with ONLY a JSON object and nothing "
+                "else, in exactly this format:\n"
+                "{\"is_follow_up\": true or false, "
+                "\"standalone_question\": \"...\"}\n\n"
+
+                "If is_follow_up is false, set "
+                "standalone_question to the original question "
+                "unchanged."
             ),
         },
         {
@@ -580,36 +542,107 @@ def _rewrite_follow_up_question(
                 "===================\n"
                 f"{conversation}\n\n"
 
-                "CURRENT QUESTION\n"
-                "================\n"
-                f"{question}\n\n"
-
-                "Rewrite the current question as a "
-                "standalone retrieval question."
+                "LATEST QUESTION\n"
+                "===============\n"
+                f"{question}"
             ),
         },
     ]
 
-    rewritten = chat_completion(
-        rewrite_messages,
-        max_tokens=350,
+    raw_output = chat_completion(
+        detection_messages,
+        max_tokens=600,
         temperature=0.0,
     )
 
-    if not rewritten:
+    if not raw_output:
+
         logger.warning(
-            "Follow-up question rewriting failed. "
+            "Follow-up detection failed. "
             "Using original question."
         )
 
         return question
 
-    # Remove accidental quotation marks.
-    rewritten = rewritten.strip(
-        "`\"'"
+    # --------------------------------------------------------
+    # Extract the JSON object. The model may wrap it in
+    # markdown fences or add extra text around it.
+    # --------------------------------------------------------
+
+    json_match = re.search(
+        r"\{.*\}",
+        raw_output.strip(),
+        re.DOTALL,
     )
 
-    if not rewritten:
+    if not json_match:
+
+        logger.warning(
+            "Follow-up detection returned no JSON. "
+            "Using original question."
+        )
+
+        return question
+
+    try:
+
+        parsed = json.loads(
+            json_match.group(0)
+        )
+
+    except (
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+    ):
+
+        logger.warning(
+            "Follow-up detection returned invalid JSON. "
+            "Using original question."
+        )
+
+        return question
+
+    if not isinstance(parsed, dict):
+        return question
+
+    is_follow_up = (
+        str(
+            parsed.get("is_follow_up")
+        )
+        .strip()
+        .lower()
+        == "true"
+    )
+
+    if not is_follow_up:
+
+        logger.info(
+            "Follow-up detection: standalone question."
+        )
+
+        return question
+
+    standalone_question = parsed.get(
+        "standalone_question"
+    )
+
+    if not isinstance(standalone_question, str):
+        return question
+
+    standalone_question = (
+        standalone_question
+        .strip()
+        .strip("`\"'")
+        .strip()
+    )
+
+    if not standalone_question:
+        return question
+
+    # Safety guard: a rewritten retrieval query should never
+    # be very long. If it is, something went wrong.
+    if len(standalone_question) > 500:
         return question
 
     logger.info(
@@ -623,10 +656,10 @@ def _rewrite_follow_up_question(
 
     logger.info(
         "Rewritten retrieval question: %s",
-        rewritten,
+        standalone_question,
     )
 
-    return rewritten
+    return standalone_question
 
 
 # ============================================================
@@ -1148,21 +1181,10 @@ async def send_message(
     # whichever recent_messages was populated above.
     # ========================================================
 
-    if _looks_like_follow_up(
+    retrieval_question = _resolve_follow_up_question(
         question,
         recent_messages,
-    ):
-
-        retrieval_question = (
-            _rewrite_follow_up_question(
-                question,
-                recent_messages,
-            )
-        )
-
-    else:
-
-        retrieval_question = question
+    )
 
 
     # ========================================================
@@ -1235,21 +1257,10 @@ async def send_message(
         # computed (which only applies to guests).
         # ====================================================
 
-        if _looks_like_follow_up(
+        retrieval_question = _resolve_follow_up_question(
             question,
             recent_messages,
-        ):
-
-            retrieval_question = (
-                _rewrite_follow_up_question(
-                    question,
-                    recent_messages,
-                )
-            )
-
-        else:
-
-            retrieval_question = question
+        )
 
         # ====================================================
         # SAVE ORIGINAL USER QUESTION
